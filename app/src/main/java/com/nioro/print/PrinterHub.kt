@@ -36,6 +36,7 @@ class PrinterHub private constructor(private val appCtx: Context) {
     @Volatile private var connecting: Transport? = null
 
     var settings: PrinterSettings = Store.load(appCtx)
+    val bridge: BridgeServer by lazy { BridgeServer(this) }
     var onLog: (() -> Unit)? = null
     var onState: (() -> Unit)? = null
 

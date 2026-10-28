@@ -120,6 +120,7 @@ class MainActivity : Activity() {
         try { unregisterReceiver(receiver) } catch (e: Exception) { }
         hub.onLog = null
         hub.onState = null
+        hub.bridge.onChange = null
     }
 
     // ------------------------------------------------------------------ interfaz base
@@ -144,6 +145,7 @@ class MainActivity : Activity() {
         pages.add(buildConnectPage())
         pages.add(buildPrintPage())
         pages.add(buildSettingsPage())
+        pages.add(buildBridgePage())
         pages.add(buildAdvancedPage())
         for (p in pages) {
             p.visibility = View.GONE
@@ -157,9 +159,9 @@ class MainActivity : Activity() {
         bar.background = Ui.glass(this, 26, 0x22FFFFFF, 0x44FFFFFF)
         bar.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6))
         tabButtons.clear()
-        val names = listOf("Conectar", "Imprimir", "Ajustes", "Avanzado")
+        val names = listOf("Conectar", "Imprimir", "Ajustes", "Puente", "Avanzado")
         for ((i, n) in names.withIndex()) {
-            val t = Ui.label(this, n, 13f, Ui.MUTED, true)
+            val t = Ui.label(this, n, 12f, Ui.MUTED, true)
             t.gravity = Gravity.CENTER
             t.setPadding(0, Ui.dp(this, 11), 0, Ui.dp(this, 11))
             t.setOnClickListener { selectTab(i) }
@@ -364,17 +366,24 @@ class MainActivity : Activity() {
         val r = Ui.row(this)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
-        col.addView(Ui.label(this, f.name, 16f, Ui.TEXT, true))
-        val sub = kindText(f.kind) + (if (f.bonded) " · emparejada" else "") + " · " + f.address
+        val alias = Store.alias(this, f.address)
+        col.addView(Ui.label(this, alias ?: f.name, 16f, Ui.TEXT, true))
+        val sub = kindText(f.kind) + (if (f.bonded) " · emparejada" else "") + " · " + f.address +
+            (if (alias != null) " · (${f.name})" else "")
         col.addView(Ui.label(this, sub, 12f, Ui.MUTED))
         r.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         val b = Ui.button(this, "Conectar", true) { connectFound(f) }
         r.addView(b)
         card.addView(r)
+        val extra = Ui.row(this)
+        extra.addView(Ui.button(this, "Renombrar") { renameDialog(f) },
+            LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         if (f.bt != null && !f.bonded) {
-            card.addView(Ui.button(this, "Emparejar primero (PIN 0000 o 1234)") { pair(f) },
-                Ui.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0))
+            extra.addView(Ui.space(this, 1), LinearLayout.LayoutParams(Ui.dp(this, 8), 1))
+            extra.addView(Ui.button(this, "Emparejar (PIN 0000/1234)") { pair(f) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1.4f))
         }
+        card.addView(extra, Ui.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0))
         card.layoutParams = Ui.lp(this, ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT, 0, 0, 0, 8)
         return card
@@ -420,6 +429,21 @@ class MainActivity : Activity() {
                 .setPositiveButton("OK", null)
                 .show()
         }
+    }
+
+    private fun renameDialog(f: FoundDevice) {
+        val e = Ui.edit(this, "Nuevo nombre", text = Store.alias(this, f.address) ?: f.name)
+        AlertDialog.Builder(this)
+            .setTitle("Renombrar impresora")
+            .setMessage("El nombre se guarda en esta app. Déjalo vacío para volver al original.")
+            .setView(e)
+            .setPositiveButton("Guardar") { _, _ ->
+                Store.setAlias(this, f.address, e.text.toString())
+                renderBtList()
+                refreshUsb()
+            }
+            .setNegativeButton("Cancelar", null)
+            .show()
     }
 
     // ------------------------------------------------------------------ USB
@@ -816,6 +840,132 @@ class MainActivity : Activity() {
                 }
             }
         }
+    }
+
+    // ------------------------------------------------------------------ PÁGINA: PUENTE
+    private lateinit var btNameEdit: android.widget.EditText
+    private lateinit var bridgeStatus: TextView
+
+    private fun refreshBridge() {
+        if (!::bridgeStatus.isInitialized) return
+        val b = hub.bridge
+        bridgeStatus.text = b.status + (if (b.received > 0) "\nRecibido: ${b.received} bytes" else "")
+        bridgeStatus.setTextColor(if (b.running) Ui.OK else Ui.MUTED)
+    }
+
+    @Suppress("MissingPermission")
+    private fun setPhoneBtName(name: String) {
+        if (name.isBlank()) { toast("Escribe un nombre"); return }
+        withBtPermission {
+            val ad = adapter()
+            if (ad == null) {
+                toast("Este equipo no tiene Bluetooth")
+            } else {
+                if (Store.origBtName(this) == null) Store.saveOrigBtName(this, ad.name)
+                val ok = try { ad.setName(name.trim()) } catch (e: Exception) { false }
+                if (ok) toast("Nombre Bluetooth del celular: ${name.trim()}")
+                else toast("Android no permitió cambiar el nombre. Cámbialo en Ajustes > Bluetooth > Nombre del dispositivo")
+            }
+        }
+    }
+
+    @Suppress("MissingPermission")
+    private fun restorePhoneBtName() {
+        val orig = Store.origBtName(this)
+        if (orig == null) { toast("No hay nombre original guardado"); return }
+        withBtPermission {
+            val ok = try { adapter()?.setName(orig) ?: false } catch (e: Exception) { false }
+            if (ok) { Store.saveOrigBtName(this, null); toast("Nombre restaurado: $orig") }
+            else toast("No se pudo restaurar. Hazlo en Ajustes > Bluetooth")
+        }
+    }
+
+    private fun makeDiscoverable() {
+        withBtPermission {
+            try {
+                val i = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE)
+                i.putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 300)
+                startActivity(i)
+            } catch (e: Exception) {
+                toast("No se pudo hacer visible: ${e.message}")
+            }
+        }
+    }
+
+    private fun buildBridgePage(): View {
+        val (sv, col) = Ui.page(this)
+        val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
+        val match = ViewGroup.LayoutParams.MATCH_PARENT
+
+        val intro = Ui.card(this)
+        intro.addView(Ui.label(this, "Puente para Alco-Sensor", 17f, Ui.TEXT, true))
+        intro.addView(Ui.label(this,
+            "El celular se hace pasar por una impresora Bluetooth (como la MCP-7880). El Alco-Sensor " +
+                "le envía el resultado y la app lo reenvía a la impresora conectada en la pestaña Conectar.\n\n" +
+                "1) Conecta tu impresora real.  2) Cambia el nombre del celular.  3) Hazlo visible.  " +
+                "4) Inicia el puente.  5) En el Alco-Sensor busca la impresora Bluetooth y elige este celular.",
+            13f, Ui.MUTED), Ui.lp(this, match, wrap, 0, 6, 0, 0))
+        col.addView(intro, Ui.lp(this, match, wrap, 0, 0, 0, 10))
+
+        val n = Ui.card(this)
+        n.addView(Ui.label(this, "1. Nombre del celular en Bluetooth", 15f, Ui.TEXT, true))
+        btNameEdit = Ui.edit(this, "Nombre visible", text = "MCP-7880")
+        n.addView(btNameEdit, Ui.lp(this, match, wrap, 0, 8, 0, 6))
+        n.addView(Ui.button(this, "Aplicar nombre", true) { setPhoneBtName(btNameEdit.text.toString()) })
+        val nr = Ui.row(this)
+        nr.addView(Ui.button(this, "Usar MCP-7880") { btNameEdit.setText("MCP-7880"); setPhoneBtName("MCP-7880") },
+            LinearLayout.LayoutParams(0, wrap, 1f))
+        nr.addView(Ui.space(this, 1), LinearLayout.LayoutParams(Ui.dp(this, 8), 1))
+        nr.addView(Ui.button(this, "Restaurar original") { restorePhoneBtName() },
+            LinearLayout.LayoutParams(0, wrap, 1f))
+        n.addView(nr, Ui.lp(this, match, wrap, 0, 8, 0, 0))
+        col.addView(n, Ui.lp(this, match, wrap, 0, 0, 0, 10))
+
+        val p = Ui.card(this)
+        p.addView(Ui.label(this, "2. Visible y puente", 15f, Ui.TEXT, true))
+        p.addView(Ui.button(this, "Hacer visible (5 min)") { makeDiscoverable() },
+            Ui.lp(this, match, wrap, 0, 8, 0, 8))
+        p.addView(Ui.label(this, "Qué hacer con lo que llegue", 13f, Ui.MUTED), Ui.lp(this, match, wrap, 0, 0, 0, 4))
+        p.addView(choiceSpinner(
+            listOf("Reenviar tal cual (impresoras ESC/POS)", "Extraer texto y reimprimir (recomendado)", "Solo capturar (no imprime)"),
+            { hub.bridge.mode }) { hub.bridge.mode = it })
+        bridgeStatus = Ui.label(this, "Detenido", 13f, Ui.MUTED)
+        p.addView(bridgeStatus, Ui.lp(this, match, wrap, 0, 10, 0, 6))
+        val pr = Ui.row(this)
+        pr.addView(Ui.button(this, "Iniciar puente", true) {
+            withBtPermission {
+                if (hub.bridge.start()) {
+                    window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                    toast("Puente iniciado. Mantén la app abierta.")
+                } else {
+                    toast("Activa el Bluetooth primero")
+                }
+            }
+        }, LinearLayout.LayoutParams(0, wrap, 1f))
+        pr.addView(Ui.space(this, 1), LinearLayout.LayoutParams(Ui.dp(this, 8), 1))
+        pr.addView(Ui.button(this, "Detener") {
+            hub.bridge.stop()
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }, LinearLayout.LayoutParams(0, wrap, 1f))
+        p.addView(pr)
+        p.addView(Ui.button(this, "Reimprimir lo último recibido") {
+            val d = hub.bridge.lastData
+            if (d.isEmpty()) toast("Aún no se ha recibido nada") else if (requireConnected()) hub.bridge.deliver(d)
+        }, Ui.lp(this, match, wrap, 0, 8, 0, 0))
+        col.addView(p, Ui.lp(this, match, wrap, 0, 0, 0, 10))
+
+        val h = Ui.card(this)
+        h.addView(Ui.label(this, "Si no funciona", 15f, Ui.TEXT, true))
+        h.addView(Ui.label(this,
+            "• Pon el modo en «Solo capturar», imprime desde el Alco-Sensor y copia el registro de la pestaña Avanzado: ahí se ve exactamente qué envía el equipo.\n" +
+                "• Si el Alco-Sensor no encuentra el celular, empareja primero desde el menú Bluetooth del equipo (PIN 0000 o 1234) y deja el celular visible.\n" +
+                "• Algunos equipos solo aceptan impresoras reales (clase de dispositivo «impresora»); Android no permite cambiar esa clase sin permisos de sistema.",
+            12f, Ui.MUTED), Ui.lp(this, match, wrap, 0, 6, 0, 0))
+        col.addView(h, Ui.lp(this, match, wrap, 0, 0, 0, 10))
+
+        hub.bridge.onChange = { refreshBridge() }
+        refreshBridge()
+        return sv
     }
 
     // ------------------------------------------------------------------ PÁGINA: AVANZADO

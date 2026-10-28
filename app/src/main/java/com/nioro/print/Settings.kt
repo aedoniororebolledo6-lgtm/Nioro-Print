@@ -82,6 +82,25 @@ object Store {
             .apply()
     }
 
+    // ---- Alias de impresoras (renombrar) ----
+    fun alias(ctx: Context, addr: String): String? =
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString("alias_$addr", null)
+
+    fun setAlias(ctx: Context, addr: String, name: String) {
+        val e = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        if (name.isBlank()) e.remove("alias_$addr") else e.putString("alias_$addr", name.trim())
+        e.apply()
+    }
+
+    fun origBtName(ctx: Context): String? =
+        ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString("origBtName", null)
+
+    fun saveOrigBtName(ctx: Context, name: String?) {
+        val e = ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
+        if (name == null) e.remove("origBtName") else e.putString("origBtName", name)
+        e.apply()
+    }
+
     // ---- Última impresora usada ----
     fun saveLast(ctx: Context, kind: String, a: String, b: String, name: String) {
         ctx.getSharedPreferences(FILE, Context.MODE_PRIVATE).edit()
