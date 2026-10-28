@@ -15,7 +15,7 @@ object Updater {
     fun currentVersionCode(ctx: Context): Long {
         return try {
             val info = ctx.packageManager.getPackageInfo(ctx.packageName, 0)
-            info.longVersionCode
+            if (android.os.Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
         } catch (e: Exception) {
             0L
         }

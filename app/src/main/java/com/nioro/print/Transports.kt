@@ -66,6 +66,7 @@ class BtClassicTransport(
 ) : Transport {
     private var socket: BluetoothSocket? = null
     @Volatile private var up = false
+    @Volatile private var cancelled = false
 
     override val label: String
         get() = "Bluetooth " + (safeName() ?: device.address)
@@ -110,10 +111,12 @@ class BtClassicTransport(
             ?: throw IOException("Este equipo no tiene Bluetooth")
         if (!adapter.isEnabled) throw IOException("Bluetooth apagado: actívalo e intenta de nuevo")
         var lastErr: Exception? = null
+        cancelled = false
         val rounds = if (force) retries.coerceAtLeast(1) else 1
         for (round in 1..rounds) {
             try { adapter.cancelDiscovery() } catch (e: Exception) { }
             for ((name, factory) in strategies()) {
+                if (cancelled) throw IOException("Conexión cancelada")
                 var s: BluetoothSocket? = null
                 try {
                     log("BT ronda $round/$rounds: $name")
@@ -130,6 +133,7 @@ class BtClassicTransport(
                     Thread.sleep(300)
                 }
             }
+            if (cancelled) throw IOException("Conexión cancelada")
             if (round < rounds) Thread.sleep(700)
         }
         throw IOException("No se pudo conectar por Bluetooth: ${lastErr?.message ?: "sin respuesta"}")
@@ -148,6 +152,7 @@ class BtClassicTransport(
 
     override fun close() {
         up = false
+        cancelled = true
         try { socket?.close() } catch (e: Exception) { }
         socket = null
     }
@@ -168,6 +173,7 @@ class BleTransport(
     @Volatile private var mtu = 23
     @Volatile private var up = false
     @Volatile private var connOk = false
+    @Volatile private var cancelled = false
     @Volatile private var connLatch = CountDownLatch(1)
     @Volatile private var svcLatch = CountDownLatch(1)
     @Volatile private var mtuLatch = CountDownLatch(1)
@@ -239,6 +245,7 @@ class BleTransport(
         for (round in 1..rounds) {
             log("BLE ronda $round/$rounds")
             close()
+            cancelled = false
             connLatch = CountDownLatch(1)
             svcLatch = CountDownLatch(1)
             mtuLatch = CountDownLatch(1)
@@ -250,6 +257,7 @@ class BleTransport(
             }
             gatt = g
             if (!connLatch.await(10, TimeUnit.SECONDS) || !connOk) {
+                if (cancelled) throw IOException("Conexión cancelada")
                 lastErr = "no conectó (GATT)"
                 try { g.close() } catch (e: Exception) { }
                 gatt = null
@@ -309,6 +317,7 @@ class BleTransport(
 
     override fun close() {
         up = false
+        cancelled = true
         try { gatt?.disconnect() } catch (e: Exception) { }
         try { gatt?.close() } catch (e: Exception) { }
         gatt = null
@@ -417,6 +426,7 @@ class TcpTransport(
     private val log: (String) -> Unit
 ) : Transport {
     private var sock: Socket? = null
+    @Volatile private var cancelled = false
 
     override val label: String
         get() = "WiFi $host:$port"
@@ -426,7 +436,9 @@ class TcpTransport(
 
     override fun connect() {
         var last: Exception? = null
+        cancelled = false
         for (i in 1..retries.coerceAtLeast(1)) {
+            if (cancelled) throw IOException("Conexión cancelada")
             try {
                 log("WiFi intento $i: $host:$port")
                 val s = Socket()
@@ -456,6 +468,7 @@ class TcpTransport(
     }
 
     override fun close() {
+        cancelled = true
         try { sock?.close() } catch (e: Exception) { }
         sock = null
     }

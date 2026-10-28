@@ -47,6 +47,7 @@ class EscPos(private val s: PrinterSettings) {
 
     /** Densidad / calor / extras. Se aplica tras ESC @. */
     fun heat(): EscPos {
+        if (!s.applyOnConnect) return this
         val d = s.density.coerceIn(0, 10)
         val heatTime = 40 + d * 14      // n2 * 10 us
         raw(0x1B, 0x37, 7, heatTime, 2) // ESC 7 n1 n2 n3
@@ -300,7 +301,7 @@ class EscPos(private val s: PrinterSettings) {
         fun textJob(s: PrinterSettings, text: String, align: Int, bold: Boolean): ByteArray {
             val e = EscPos(s).init().codepage().heat()
             if (s.textAsImage) {
-                val bmp = textBitmap(text, s.paperDots, s.fontSize + 1, bold, align)
+                val bmp = textBitmap(text.replace("\r", ""), s.paperDots, s.fontSize + 1, bold, align)
                 e.image(bmp, upscale = false, dither = false)
             } else {
                 e.align(align).bold(bold).size(s.fontSize + 1)

@@ -83,6 +83,7 @@ class MainActivity : Activity() {
         val f = IntentFilter()
         f.addAction(BluetoothDevice.ACTION_FOUND)
         f.addAction(BluetoothAdapter.ACTION_DISCOVERY_FINISHED)
+        f.addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
         f.addAction(ACTION_USB_PERMISSION)
         f.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
         f.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
@@ -252,6 +253,10 @@ class MainActivity : Activity() {
                     if (d != null) addBtDevice(d, false)
                 }
                 BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> { }
+                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+                    val d = i.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                    if (d != null && found.containsKey(d.address)) addBtDevice(d, false)
+                }
                 ACTION_USB_PERMISSION -> {
                     val d = pendingUsb
                     pendingUsb = null
@@ -280,8 +285,10 @@ class MainActivity : Activity() {
             else -> if (le) Kind.BT_LE else Kind.BT_CLASSIC
         }
         val bonded = d.bondState == BluetoothDevice.BOND_BONDED
-        found[d.address] = FoundDevice(name, d.address, kind, bt = d, bonded = bonded)
-        renderBtList()
+        val entry = FoundDevice(name, d.address, kind, bt = d, bonded = bonded)
+        val old = found[d.address]
+        found[d.address] = entry
+        if (old != entry) renderBtList()
     }
 
     @Suppress("MissingPermission")
@@ -493,7 +500,7 @@ class MainActivity : Activity() {
             }
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         r.addView(Ui.space(this, 1), LinearLayout.LayoutParams(Ui.dp(this, 8), 1))
-        r.addView(Ui.button(this, "Desconectar") { hub.disconnect() },
+        r.addView(Ui.button(this, "Desconectar / cancelar") { hub.disconnect() },
             LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         actions.addView(r, Ui.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 8, 0, 0))
         col.addView(actions, Ui.lp(this, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, 0, 0, 0, 10))
@@ -770,7 +777,7 @@ class MainActivity : Activity() {
         c.addView(switchRow("Modo forzado (todos los métodos)", { s.force }) { s.force = it; save() })
         c.addView(seekRow("Reintentos", 1, 10, { s.retries }, { s.retries = it; save() }) { "$it" })
         c.addView(switchRow("Reconectar la última impresora al abrir", { s.autoConnect }) { s.autoConnect = it; save() })
-        c.addView(switchRow("Enviar configuración al conectar", { s.applyOnConnect }) { s.applyOnConnect = it; save() })
+        c.addView(switchRow("Enviar densidad/configuración (ESC 7) a la impresora", { s.applyOnConnect }) { s.applyOnConnect = it; save() })
         c.addView(switchRow("Comando extra de densidad (DC2 #)", { s.extraDensityCmd }) { s.extraDensityCmd = it; save() })
         c.addView(Ui.button(this, "Aplicar configuración a la impresora ahora", true) {
             runJob("Configuración aplicada") { EscPos.configJob(s) }

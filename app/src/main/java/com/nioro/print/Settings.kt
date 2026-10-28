@@ -17,7 +17,7 @@ data class PrinterSettings(
     var extraDensityCmd: Boolean = false, // DC2 # n (algunas impresoras chinas)
     var autoConnect: Boolean = true,
     var force: Boolean = true,
-    var retries: Int = 5
+    var retries: Int = 3
 ) {
     fun copyFrom(o: PrinterSettings) {
         paperDots = o.paperDots; density = o.density; sendSpeed = o.sendSpeed

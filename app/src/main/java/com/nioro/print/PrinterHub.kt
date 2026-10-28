@@ -33,6 +33,7 @@ class PrinterHub private constructor(private val appCtx: Context) {
     @Volatile var transport: Transport? = null
     @Volatile private var factory: (() -> Transport)? = null
     @Volatile var busy = false
+    @Volatile private var connecting: Transport? = null
 
     var settings: PrinterSettings = Store.load(appCtx)
     var onLog: (() -> Unit)? = null
@@ -74,7 +75,9 @@ class PrinterHub private constructor(private val appCtx: Context) {
                 try { transport?.close() } catch (e: Exception) { }
                 transport = null
                 val t = make()
+                connecting = t
                 t.connect()
+                connecting = null
                 transport = t
                 factory = make
                 Store.saveLast(appCtx, kindKey, a, b, name)
@@ -91,6 +94,7 @@ class PrinterHub private constructor(private val appCtx: Context) {
                 err = e.message ?: e.javaClass.simpleName
                 log("ERROR: $err")
             }
+            connecting = null
             busy = false
             main.post {
                 onState?.invoke()
@@ -125,6 +129,8 @@ class PrinterHub private constructor(private val appCtx: Context) {
     }
 
     fun disconnect() {
+        // Cancela de inmediato un intento de conexión en curso
+        try { connecting?.close() } catch (e: Exception) { }
         exec.execute {
             try { transport?.close() } catch (e: Exception) { }
             transport = null
@@ -258,6 +264,7 @@ class CompositeBt(
     private val log: (String) -> Unit
 ) : Transport {
     private var active: Transport? = null
+    @Volatile private var cancelled = false
 
     override val label: String
         get() = active?.label ?: classic.label
@@ -278,7 +285,9 @@ class CompositeBt(
             }
         }
         var last: Exception? = null
+        cancelled = false
         for (t in order) {
+            if (cancelled) throw java.io.IOException("Conexión cancelada")
             try {
                 t.connect()
                 active = t
@@ -298,6 +307,7 @@ class CompositeBt(
     override fun read(timeoutMs: Int, max: Int): ByteArray = active?.read(timeoutMs, max) ?: ByteArray(0)
 
     override fun close() {
+        cancelled = true
         classic.close()
         ble.close()
         active = null
