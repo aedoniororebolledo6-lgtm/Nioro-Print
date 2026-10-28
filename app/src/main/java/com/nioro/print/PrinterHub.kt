@@ -36,7 +36,6 @@ class PrinterHub private constructor(private val appCtx: Context) {
     @Volatile private var connecting: Transport? = null
 
     var settings: PrinterSettings = Store.load(appCtx)
-    val bridge: BridgeServer by lazy { BridgeServer(this) }
     var onLog: (() -> Unit)? = null
     var onState: (() -> Unit)? = null
 
@@ -185,6 +184,45 @@ class PrinterHub private constructor(private val appCtx: Context) {
             main.post {
                 onState?.invoke()
                 cb(err)
+            }
+        }
+    }
+
+    /** Envía comandos uno por uno y registra lo que responde la impresora. */
+    fun probe(cmds: List<Pair<String, ByteArray>>, cb: (String) -> Unit) {
+        busy = true
+        main.post { onState?.invoke() }
+        exec.execute {
+            val sb = StringBuilder()
+            try {
+                val t = transport
+                if (t == null || !t.connected) {
+                    sb.append("No hay impresora conectada")
+                } else {
+                    for ((title, bytes) in cmds) {
+                        try {
+                            t.write(bytes)
+                            Thread.sleep(350)
+                            val r = t.read(900, 128)
+                            val txt = r.map { (it.toInt() and 0xFF).let { v -> if (v in 32..126) v.toChar() else '.' } }.joinToString("")
+                            val line = if (r.isEmpty()) "$title → sin respuesta" else "$title → respuesta: $txt"
+                            sb.append(line).append('\n')
+                            log(line)
+                        } catch (e: Exception) {
+                            val line = "$title → error: ${e.message}"
+                            sb.append(line).append('\n')
+                            log(line)
+                            break
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                sb.append("Error: ").append(e.message)
+            }
+            busy = false
+            main.post {
+                onState?.invoke()
+                cb(sb.toString().trim())
             }
         }
     }

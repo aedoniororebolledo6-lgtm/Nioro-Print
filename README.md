@@ -16,6 +16,7 @@ Descarga siempre la última versión:
 - **Imprimir**: texto (alineación, negrita, tamaño 1x-4x), imágenes de la galería (dithering), QR, código de barras Code 128, página de prueba, avanzar papel, cortar.
 - **Ajustes de la impresora**: ancho de papel, oscuridad (ESC 7 / DC2 #), velocidad de envío, codificación (CP850, CP437, WPC1252, ASCII), texto como imagen, avance y corte, reintentos, reconexión al abrir.
 - **Avanzado**: envío de bytes ESC/POS en hexadecimal, autotests de fábrica, consulta de estado/papel/modelo, registro copiable.
+- **Nombre real**: escribe un nombre Bluetooth nuevo (p. ej. MCP-7880) dentro del módulo de la impresora probando comandos AT conocidos. No hay comando universal; depende del modelo.
 - **Actualización** desde GitHub Releases en Ajustes.
 
 ## Primera conexión (impresoras tipo 58 mm)
