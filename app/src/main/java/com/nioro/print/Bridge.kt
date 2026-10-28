@@ -94,7 +94,7 @@ class BridgeServer(private val hub: PrinterHub) {
     private var client: BluetoothSocket? = null
     private var thread: Thread? = null
 
-    private fun setStatus(s: String) {
+    private fun updateStatus(s: String) {
         status = s
         main.post { onChange?.invoke() }
     }
@@ -117,7 +117,7 @@ class BridgeServer(private val hub: PrinterHub) {
         try { client?.close() } catch (e: Exception) { }
         server = null
         client = null
-        setStatus("Detenido")
+        updateStatus("Detenido")
     }
 
     private fun openServer(adapter: BluetoothAdapter): BluetoothServerSocket {
@@ -136,27 +136,27 @@ class BridgeServer(private val hub: PrinterHub) {
             try {
                 val srv = openServer(adapter)
                 server = srv
-                setStatus("Esperando al Alco-Sensor… (visible como ${adapter.name})")
+                updateStatus("Esperando al Alco-Sensor… (visible como ${adapter.name})")
                 c = srv.accept()
                 try { srv.close() } catch (e: Exception) { }
                 server = null
                 client = c
                 val who = try { c.remoteDevice.name ?: c.remoteDevice.address } catch (e: Exception) { "equipo" }
-                setStatus("Conectado con: $who")
+                updateStatus("Conectado con: $who")
                 hub.log("Puente: conectado con $who")
                 handle(c)
                 hub.log("Puente: $who se desconectó")
             } catch (e: Exception) {
                 if (!running) break
                 hub.log("Puente: ${e.message}")
-                setStatus("Reintentando…")
+                updateStatus("Reintentando…")
                 try { Thread.sleep(1500) } catch (x: InterruptedException) { }
             } finally {
                 try { c?.close() } catch (e: Exception) { }
                 client = null
             }
         }
-        setStatus("Detenido")
+        updateStatus("Detenido")
         hub.log("Puente detenido")
     }
 
